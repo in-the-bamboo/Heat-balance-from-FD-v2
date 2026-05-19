@@ -56,7 +56,8 @@ def detect_rooms_from_coords(df, meshes, offset_dist=0.05):
     # 各STL空間にポイントが含まれているか判定
     room_plus = "外気(未定義)"
     room_minus = "外気(未定義)"
-
+# これを一時的に追加して、Streamlitの画面で座標を確認する
+    st.write(f"【デバッグ】ファイル: 判定軸={detected_axis}, Plus側座標={pt_plus}, Minus側座標={pt_minus}")
     for room_name, mesh in meshes.items():
         # trimeshのcontainsは水密性(Watertight)のあるメッシュに有効
         try:
