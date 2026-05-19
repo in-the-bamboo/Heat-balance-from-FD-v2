@@ -32,10 +32,9 @@ def detect_rooms_from_coords(df, meshes, offset_dist=0.05):
         return None, None, None, "座標列(X[m], Y[m], Z[m])がありません"
 
     # 面の中心座標を計算
-    cx = df['X[m]'].mean() * 1000
-    cy = df['Y[m]'].mean() * 1000
-    cz = df['Z[m]'].mean() * 1000
-
+    cx = df['X[m]'].mean()
+    cy = df['Y[m]'].mean()
+    cz = df['Z[m]'].mean()
     # 座標のばらつき（標準偏差）から面が垂直に交わる「軸」を判定
     stds = {
         'x': df['X[m]'].std(),
@@ -103,7 +102,7 @@ def process_cfd_files(stl_files, cfd_files, rho, cp, lv, threshold, calc_latent,
             df = pd.read_csv(uploaded_file, skiprows=2, encoding='cp932')
             
             # --- (A) 空間判定 ---
-            axis, r_plus, r_minus, err = detect_rooms_from_coords(df, meshes, offset_dist=50)
+            axis, r_plus, r_minus, err = detect_rooms_from_coords(df, meshes, offset_dist=0.05)
             # ==========================================
             # 🔍 【デバッグ】開口部ファイル名と判定結果を確認
             # ==========================================
