@@ -76,7 +76,7 @@ def detect_rooms_from_coords(df, meshes, offset_dist=0.05):
     room_plus = "外気(未定義)"
     room_minus = "外気(未定義)"
 
-sorted_meshes = sorted(meshes.items(), key=lambda item: item[1].bounding_box.volume)
+    sorted_meshes = sorted(meshes.items(), key=lambda item: item[1].bounding_box.volume)
 
     for room_name, mesh in sorted_meshes:
         if is_inside(mesh, pt_plus):
