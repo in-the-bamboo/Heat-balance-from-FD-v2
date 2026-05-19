@@ -31,20 +31,19 @@ def detect_rooms_from_coords(df, meshes, offset_dist=0.05):
     if not all(col in df.columns for col in ['X[m]', 'Y[m]', 'Z[m]']):
         return None, None, None, "座標列(X[m], Y[m], Z[m])がありません"
 
-    # 面の中心座標を計算
+    # 面の中心座標を計算（メートル単位のまま）
     cx = df['X[m]'].mean()
     cy = df['Y[m]'].mean()
     cz = df['Z[m]'].mean()
+
     # 座標のばらつき（標準偏差）から面が垂直に交わる「軸」を判定
     stds = {
         'x': df['X[m]'].std(),
         'y': df['Y[m]'].std(),
         'z': df['Z[m]'].std()
     }
-    # 最も変化がない（標準偏差が最小の）軸が「検出軸」
     detected_axis = min(stds, key=stds.get)
 
-    # 判定用の2つのテストポイント（面の少し前と後ろ）を作成
     pt_plus = [cx, cy, cz]
     pt_minus = [cx, cy, cz]
     
@@ -52,20 +51,45 @@ def detect_rooms_from_coords(df, meshes, offset_dist=0.05):
     pt_plus[axis_idx] += offset_dist
     pt_minus[axis_idx] -= offset_dist
 
-    # 各STL空間にポイントが含まれているか判定
+   # --- 💡 L型対応版：Ray-Castingによる内外判定 ---
+    def is_inside(mesh, pt):
+        # 1. まず直方体（バウンディングボックス）の外なら、計算するまでもなく確実に外
+        min_b, max_b = mesh.bounds
+        if not (min_b[0] <= pt[0] <= max_b[0] and
+                min_b[1] <= pt[1] <= max_b[1] and
+                min_b[2] <= pt[2] <= max_b[2]):
+            return False
+            
+        # 2. バウンディングボックス内なら、レーザーを撃って厳密判定（L型対策）
+        try:
+            # 判定点から真上（Z軸プラス方向）へ向かうベクトル
+            ray_origins = np.array([pt])
+            ray_directions = np.array([[0.0, 0.0, 1.0]])
+            
+            # trimeshの機能でレーザーとメッシュの交差地点を計算
+            locations, index_ray, index_tri = mesh.ray.intersects_location(
+                ray_origins=ray_origins,
+                ray_directions=ray_directions
+            )
+            
+            # 交差した回数が奇数なら「内部」、偶数（0含む）なら「外部」
+            hits = len(locations)
+            return hits % 2 == 1
+            
+        except Exception as e:
+            # 万が一メッシュが壊れすぎていて計算エラーが出た場合は外気扱いにする
+            return False
+    # ----------------------------------------
+    # ----------------------------------------
+
     room_plus = "外気(未定義)"
     room_minus = "外気(未定義)"
-# これを一時的に追加して、Streamlitの画面で座標を確認する
-    st.write(f"【デバッグ】ファイル: 判定軸={detected_axis}, Plus側座標={pt_plus}, Minus側座標={pt_minus}")
+
     for room_name, mesh in meshes.items():
-        # trimeshのcontainsは水密性(Watertight)のあるメッシュに有効
-        try:
-            if mesh.contains([pt_plus])[0]:
-                room_plus = room_name
-            if mesh.contains([pt_minus])[0]:
-                room_minus = room_name
-        except:
-            pass # エラー時はスキップ
+        if is_inside(mesh, pt_plus):
+            room_plus = room_name
+        if is_inside(mesh, pt_minus):
+            room_minus = room_name
 
     return detected_axis, room_plus, room_minus, None
 
