@@ -76,22 +76,20 @@ def detect_rooms_from_coords(df, meshes, offset_dist=0.05):
     room_plus = "外気(未定義)"
     room_minus = "外気(未定義)"
 
-    for room_name, mesh in meshes.items():
-        # Plus側の判定
-        is_in_p, msg_p = is_inside(mesh, pt_plus, "Plus")
-        if "Box外" not in msg_p: # 💡 Box外「以外」のログ（エラーも含める）を全て出す！
-            debug_logs.append(f"   [{room_name}] ➕Plus判定: {msg_p} ➔ {'✅内部' if is_in_p else '❌外部'}")
-        if is_in_p:
+sorted_meshes = sorted(meshes.items(), key=lambda item: item[1].bounding_box.volume)
+
+    for room_name, mesh in sorted_meshes:
+        if is_inside(mesh, pt_plus):
             room_plus = room_name
-
-        # Minus側の判定
-        is_in_m, msg_m = is_inside(mesh, pt_minus, "Minus")
-        if "Box外" not in msg_m:
-            debug_logs.append(f"   [{room_name}] ➖Minus判定: {msg_m} ➔ {'✅内部' if is_in_m else '❌外部'}")
-        if is_in_m:
+            break
+            
+    for room_name, mesh in sorted_meshes:
+        if is_inside(mesh, pt_minus):
             room_minus = room_name
+            break
 
-    return detected_axis, room_plus, room_minus, None, debug_logs
+    return detected_axis, room_plus, room_minus, None
+
 def process_cfd_files(stl_files, cfd_files, rho, cp, lv, threshold, calc_latent, hum_col):
     meshes, logs = load_stl_meshes(stl_files)
     if not meshes:
@@ -127,16 +125,6 @@ def process_cfd_files(stl_files, cfd_files, rho, cp, lv, threshold, calc_latent,
            # --- (A) 空間判定 ---
             # 戻り値に debug_logs を追加で受け取る
             axis, r_plus, r_minus, err, debug_logs = detect_rooms_from_coords(df, meshes, offset_dist=0.05)
-            
-            # ==========================================
-            # 🔍 【超詳細デバッグ】結果を画面に出力
-            # ==========================================
-            st.markdown(f"#### 📄 {file_name}")
-            for log in debug_logs:
-                st.text(log)
-            st.write(f"**最終判定 ➔ Plus側: {r_plus} / Minus側: {r_minus}**")
-            st.markdown("---")
-            # ==========================================
 
             if err:
                 logs.append(f"⚠️ {file_name}: {err}")
