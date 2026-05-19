@@ -27,72 +27,71 @@ def load_stl_meshes(stl_files):
     return meshes, logs
 
 def detect_rooms_from_coords(df, meshes, offset_dist=0.05):
-    """座標から開口部の軸と、隣接する2つの部屋を判定する"""
+    """座標から開口部の軸と、隣接する2つの部屋を判定し、詳細なデバッグログを返す"""
     if not all(col in df.columns for col in ['X[m]', 'Y[m]', 'Z[m]']):
-        return None, None, None, "座標列(X[m], Y[m], Z[m])がありません"
+        return None, None, None, "座標列なし", []
 
-    # 面の中心座標を計算（メートル単位のまま）
     cx = df['X[m]'].mean()
     cy = df['Y[m]'].mean()
     cz = df['Z[m]'].mean()
 
-    # 座標のばらつき（標準偏差）から面が垂直に交わる「軸」を判定
-    stds = {
-        'x': df['X[m]'].std(),
-        'y': df['Y[m]'].std(),
-        'z': df['Z[m]'].std()
-    }
+    stds = {'x': df['X[m]'].std(), 'y': df['Y[m]'].std(), 'z': df['Z[m]'].std()}
     detected_axis = min(stds, key=stds.get)
 
     pt_plus = [cx, cy, cz]
     pt_minus = [cx, cy, cz]
-    
     axis_idx = {'x': 0, 'y': 1, 'z': 2}[detected_axis]
     pt_plus[axis_idx] += offset_dist
     pt_minus[axis_idx] -= offset_dist
 
-   # --- 💡 L型対応版：Ray-Castingによる内外判定 ---
-    def is_inside(mesh, pt):
-        # 1. まず直方体（バウンディングボックス）の外なら、計算するまでもなく確実に外
+    debug_logs = []
+    debug_logs.append(f"📍 中心:{cx:.3f}, {cy:.3f}, {cz:.3f} | 軸:{detected_axis}")
+    debug_logs.append(f"   ➕Plus点 : {pt_plus[0]:.3f}, {pt_plus[1]:.3f}, {pt_plus[2]:.3f}")
+    debug_logs.append(f"   ➖Minus点: {pt_minus[0]:.3f}, {pt_minus[1]:.3f}, {pt_minus[2]:.3f}")
+
+    def is_inside(mesh, pt, point_name):
         min_b, max_b = mesh.bounds
-        if not (min_b[0] <= pt[0] <= max_b[0] and
-                min_b[1] <= pt[1] <= max_b[1] and
-                min_b[2] <= pt[2] <= max_b[2]):
-            return False
+        in_box = (min_b[0] <= pt[0] <= max_b[0] and
+                  min_b[1] <= pt[1] <= max_b[1] and
+                  min_b[2] <= pt[2] <= max_b[2])
+        if not in_box:
+            return False, "Box外"
             
-        # 2. バウンディングボックス内なら、レーザーを撃って厳密判定（L型対策）
         try:
-            # 判定点から真上（Z軸プラス方向）へ向かうベクトル
             ray_origins = np.array([pt])
-            ray_directions = np.array([[0.0, 0.0, 1.0]])
-            
-            # trimeshの機能でレーザーとメッシュの交差地点を計算
+            ray_directions = np.array([[0.0, 0.0, 1.0]]) # 真上にレーザーを撃つ
             locations, index_ray, index_tri = mesh.ray.intersects_location(
-                ray_origins=ray_origins,
-                ray_directions=ray_directions
+                ray_origins=ray_origins, ray_directions=ray_directions
             )
-            
-            # 交差した回数が奇数なら「内部」、偶数（0含む）なら「外部」
             hits = len(locations)
-            return hits % 2 == 1
+            hit_zs = [round(loc[2], 3) for loc in locations]
+            
+            result = (hits % 2 == 1)
+            msg = f"Box内 ➔ レーザー貫通 {hits}回 (交差点Z: {hit_zs})"
+            return result, msg
             
         except Exception as e:
-            # 万が一メッシュが壊れすぎていて計算エラーが出た場合は外気扱いにする
-            return False
-    # ----------------------------------------
-    # ----------------------------------------
+            return False, f"計算エラー: {e}"
 
     room_plus = "外気(未定義)"
     room_minus = "外気(未定義)"
 
     for room_name, mesh in meshes.items():
-        if is_inside(mesh, pt_plus):
+        # Plus側の判定
+        is_in_p, msg_p = is_inside(mesh, pt_plus, "Plus")
+        if "Box内" in msg_p: # Boxに入った部屋だけログに残す
+            debug_logs.append(f"   [{room_name}] ➕Plus判定: {msg_p} ➔ {'✅内部' if is_in_p else '❌外部'}")
+        if is_in_p:
             room_plus = room_name
-        if is_inside(mesh, pt_minus):
+
+        # Minus側の判定
+        is_in_m, msg_m = is_inside(mesh, pt_minus, "Minus")
+        if "Box内" in msg_m:
+            debug_logs.append(f"   [{room_name}] ➖Minus判定: {msg_m} ➔ {'✅内部' if is_in_m else '❌外部'}")
+        if is_in_m:
             room_minus = room_name
 
-    return detected_axis, room_plus, room_minus, None
-
+    return detected_axis, room_plus, room_minus, None, debug_logs
 def process_cfd_files(stl_files, cfd_files, rho, cp, lv, threshold, calc_latent, hum_col):
     meshes, logs = load_stl_meshes(stl_files)
     if not meshes:
@@ -125,17 +124,20 @@ def process_cfd_files(stl_files, cfd_files, rho, cp, lv, threshold, calc_latent,
             uploaded_file.seek(0)
             df = pd.read_csv(uploaded_file, skiprows=2, encoding='cp932')
             
-            # --- (A) 空間判定 ---
-            axis, r_plus, r_minus, err = detect_rooms_from_coords(df, meshes, offset_dist=0.05)
+           # --- (A) 空間判定 ---
+            # 戻り値に debug_logs を追加で受け取る
+            axis, r_plus, r_minus, err, debug_logs = detect_rooms_from_coords(df, meshes, offset_dist=0.05)
+            
             # ==========================================
-            # 🔍 【デバッグ】開口部ファイル名と判定結果を確認
+            # 🔍 【超詳細デバッグ】結果を画面に出力
             # ==========================================
-            cx = round(df['X[m]'].mean(), 2)
-            cy = round(df['Y[m]'].mean(), 2)
-            cz = round(df['Z[m]'].mean(), 2)
-            st.write(f"📄 **{file_name}** (中心座標 X:{cx}, Y:{cy}, Z:{cz})")
-            st.write(f"　 ➔ 判定結果: 軸={axis}, Plus側={r_plus}, Minus側={r_minus}")
+            st.markdown(f"#### 📄 {file_name}")
+            for log in debug_logs:
+                st.text(log)
+            st.write(f"**最終判定 ➔ Plus側: {r_plus} / Minus側: {r_minus}**")
+            st.markdown("---")
             # ==========================================
+
             if err:
                 logs.append(f"⚠️ {file_name}: {err}")
                 continue
