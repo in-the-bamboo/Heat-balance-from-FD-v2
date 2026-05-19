@@ -79,14 +79,14 @@ def detect_rooms_from_coords(df, meshes, offset_dist=0.05):
     for room_name, mesh in meshes.items():
         # Plus側の判定
         is_in_p, msg_p = is_inside(mesh, pt_plus, "Plus")
-        if "Box内" in msg_p: # Boxに入った部屋だけログに残す
+        if "Box外" not in msg_p: # 💡 Box外「以外」のログ（エラーも含める）を全て出す！
             debug_logs.append(f"   [{room_name}] ➕Plus判定: {msg_p} ➔ {'✅内部' if is_in_p else '❌外部'}")
         if is_in_p:
             room_plus = room_name
 
         # Minus側の判定
         is_in_m, msg_m = is_inside(mesh, pt_minus, "Minus")
-        if "Box内" in msg_m:
+        if "Box外" not in msg_m:
             debug_logs.append(f"   [{room_name}] ➖Minus判定: {msg_m} ➔ {'✅内部' if is_in_m else '❌外部'}")
         if is_in_m:
             room_minus = room_name
