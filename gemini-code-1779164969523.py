@@ -75,7 +75,19 @@ def process_cfd_files(stl_files, cfd_files, rho, cp, lv, threshold, calc_latent,
     if not meshes:
         logs.append("⚠️ 有効な3Dメッシュ(STL)が読み込めませんでした。")
         return None, None, None, logs
-
+# ==========================================
+    # 🔍 【デバッグ】STLの読み込み状況と座標スケールを確認
+    # ==========================================
+    st.markdown("### 🔍 【デバッグ】STL読み込み状況")
+    for room_name, mesh in meshes.items():
+        # mesh.bounds は [[X最小, Y最小, Z最小], [X最大, Y最大, Z最大]] を返します
+        min_bound = np.round(mesh.bounds[0], 2)
+        max_bound = np.round(mesh.bounds[1], 2)
+        st.write(f"- **{room_name}**: X範囲[{min_bound[0]} 〜 {max_bound[0]}], "
+                 f"Y範囲[{min_bound[1]} 〜 {max_bound[1]}], "
+                 f"Z範囲[{min_bound[2]} 〜 {max_bound[2]}]")
+    st.markdown("---")
+    # ==========================================
     opening_results_list = []
     
     total_files = len(cfd_files)
@@ -92,6 +104,15 @@ def process_cfd_files(stl_files, cfd_files, rho, cp, lv, threshold, calc_latent,
             
             # --- (A) 空間判定 ---
             axis, r_plus, r_minus, err = detect_rooms_from_coords(df, meshes, offset_dist=50)
+            # ==========================================
+            # 🔍 【デバッグ】開口部ファイル名と判定結果を確認
+            # ==========================================
+            cx = round(df['X[m]'].mean(), 2)
+            cy = round(df['Y[m]'].mean(), 2)
+            cz = round(df['Z[m]'].mean(), 2)
+            st.write(f"📄 **{file_name}** (中心座標 X:{cx}, Y:{cy}, Z:{cz})")
+            st.write(f"　 ➔ 判定結果: 軸={axis}, Plus側={r_plus}, Minus側={r_minus}")
+            # ==========================================
             if err:
                 logs.append(f"⚠️ {file_name}: {err}")
                 continue
